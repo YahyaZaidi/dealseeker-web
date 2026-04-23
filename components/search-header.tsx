@@ -11,6 +11,9 @@ interface SearchHeaderProps {
   onSearchChange: (query: string) => void
   onSearch: (queryOverride?: string) => void
   hasSearched: boolean
+  userName: string | null
+  onSignIn: () => void
+  onSignOut: () => void
 }
 
 function Logo({ size = "lg" }: { size?: "sm" | "lg" }) {
@@ -43,6 +46,9 @@ export function SearchHeader({
   onSearchChange,
   onSearch,
   hasSearched,
+  userName,
+  onSignIn,
+  onSignOut,
 }: SearchHeaderProps) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -143,6 +149,20 @@ export function SearchHeader({
             Search
           </Button>
         </form>
+        {userName ? (
+          <div className="flex items-center gap-2">
+            <span className="hidden text-xs text-muted-foreground sm:inline">
+              Signed in as <span className="text-foreground">{userName}</span>
+            </span>
+            <Button type="button" variant="outline" size="sm" onClick={onSignOut}>
+              Sign out
+            </Button>
+          </div>
+        ) : (
+          <Button type="button" variant="outline" size="sm" onClick={onSignIn}>
+            Sign in
+          </Button>
+        )}
       </div>
     </header>
   )

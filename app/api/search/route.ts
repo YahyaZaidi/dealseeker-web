@@ -24,6 +24,10 @@ function parsePrice(priceStr?: string): number | null {
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl
   const query = searchParams.get("q")
+  const pageParam = Number.parseInt(searchParams.get("page") ?? "1", 10)
+  const limitParam = Number.parseInt(searchParams.get("limit") ?? "24", 10)
+  const page = Number.isNaN(pageParam) || pageParam < 1 ? 1 : pageParam
+  const limit = Number.isNaN(limitParam) || limitParam < 1 ? 24 : Math.min(limitParam, 50)
 
   if (!query?.trim()) {
     return NextResponse.json({ error: "Missing search query" }, { status: 400 })
@@ -38,13 +42,28 @@ export async function GET(request: NextRequest) {
   url.searchParams.set("api_key", apiKey)
   url.searchParams.set("query", query)
   url.searchParams.set("country", "nz")
+  url.searchParams.set("page", String(page))
+  url.searchParams.set("num", String(limit))
 
-  const response = await fetch(url.toString())
+  let response: Response
+  try {
+    response = await fetch(url.toString())
+  } catch {
+    return NextResponse.json(
+      { error: "Failed to reach deal provider. Please try again shortly." },
+      { status: 502 }
+    )
+  }
 
   if (!response.ok) {
     const body = await response.text()
+    const errorMessage =
+      response.status === 429
+        ? "Too many requests to deal provider. Please try again in a minute."
+        : `Deal provider error ${response.status}`
+
     return NextResponse.json(
-      { error: `ScrapingDog error ${response.status}`, detail: body },
+      { error: errorMessage, detail: body },
       { status: response.status }
     )
   }
@@ -57,7 +76,7 @@ export async function GET(request: NextRequest) {
       return item.title && price !== null && item.product_url
     })
     .map((item, index) => ({
-      id: String(item.position ?? index),
+      id: `${page}-${item.position ?? index}`,
       name: item.title!,
       price: parsePrice(item.price)!,
       image: item.thumbnail ?? "",
