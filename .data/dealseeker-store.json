@@ -1,0 +1,23 @@
+{
+  "users": {
+    "yahya.zaidi800@gmail.com": {
+      "savedDeals": [],
+      "searchHistory": []
+    }
+  },
+  "accounts": {
+    "yahya.zaidi800@gmail.com": {
+      "email": "yahya.zaidi800@gmail.com",
+      "passwordHash": "80917a50bd8f40f339f3c600f88c04e75da7995aad22cc9497e69ffdf59fc6ec4ffb2c0fb0126bea75eded2306ec6820b4bea19ab3a9f89c0dfdb28ccf0c1aea",
+      "passwordSalt": "45e58158b6ab6b3f0b7eb3542fbe0825",
+      "createdAt": "2026-04-23T16:17:51.634Z",
+      "emailVerified": true,
+      "emailVerificationCodeHash": null,
+      "emailVerificationCodeExpiresAt": null,
+      "passwordResetCodeHash": null,
+      "passwordResetCodeExpiresAt": null,
+      "failedSignInAttempts": 0,
+      "lockUntil": null
+    }
+  }
+}

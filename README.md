@@ -2,6 +2,18 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
+Set environment variables in `.env.local`:
+
+```bash
+SCRAPINGDOG_API_KEY=your_scrapingdog_key
+RESEND_API_KEY=your_resend_api_key
+AUTH_FROM_EMAIL=Dealseeker <auth@yourdomain.com>
+```
+
+For local development, auth code emails use the Resend API when configured. If email env vars are missing, the app falls back to development-only code hints in API responses.
+
+Then run the development server:
+
 First, run the development server:
 
 ```bash

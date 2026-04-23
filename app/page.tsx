@@ -31,9 +31,9 @@ export default function Home() {
   const [maxPrice, setMaxPrice] = useState("")
   const [savedDeals, setSavedDeals] = useState<Product[]>([])
   const [recentSearches, setRecentSearches] = useState<string[]>([])
-  const [userName, setUserName] = useState<string | null>(null)
+  const [userEmail, setUserEmail] = useState<string | null>(null)
   const [isStorageReady, setIsStorageReady] = useState(false)
-  const storageNamespace = userName?.trim().toLowerCase() || "guest"
+  const storageNamespace = userEmail?.trim().toLowerCase() || "guest"
   const savedDealsStorageKey = `${SAVED_DEALS_KEY_PREFIX}:${storageNamespace}`
   const searchHistoryStorageKey = `${SEARCH_HISTORY_KEY_PREFIX}:${storageNamespace}`
 
@@ -45,11 +45,11 @@ export default function Home() {
         const response = await fetch("/api/auth/me", { cache: "no-store" })
         const data = await response.json().catch(() => null)
         if (!ignore && response.ok) {
-          setUserName(typeof data?.userName === "string" ? data.userName : null)
+          setUserEmail(typeof data?.userEmail === "string" ? data.userEmail : null)
         }
       } catch {
         if (!ignore) {
-          setUserName(null)
+          setUserEmail(null)
         }
       }
     }
@@ -94,7 +94,7 @@ export default function Home() {
     let ignore = false
 
     async function loadServerData() {
-      if (!userName) return
+      if (!userEmail) return
       try {
         const [savedResponse, historyResponse] = await Promise.all([
           fetch("/api/saved-deals", { cache: "no-store" }),
@@ -119,7 +119,7 @@ export default function Home() {
     return () => {
       ignore = true
     }
-  }, [userName])
+  }, [userEmail])
 
   useEffect(() => {
     if (typeof window === "undefined" || !isStorageReady) return
@@ -187,7 +187,7 @@ export default function Home() {
           )
           return [normalized, ...withoutDuplicate].slice(0, 10)
         })
-        if (userName) {
+        if (userEmail) {
           void fetch("/api/search-history", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -216,43 +216,104 @@ export default function Home() {
         setIsLoading(false)
       }
     }
-  }, [searchQuery, submittedQuery, userName])
+  }, [searchQuery, submittedQuery, userEmail])
 
-  const handleSignIn = useCallback(async () => {
-    if (typeof window === "undefined") return
-    const name = window.prompt("Enter your name to sign in")
-    if (!name) return
-    const trimmed = name.trim()
-    if (!trimmed) return
-
-    try {
-      const response = await fetch("/api/auth/sign-in", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userName: trimmed }),
-      })
-      if (!response.ok) {
-        return
+  const handleAuthSubmit = useCallback(
+    async (payload: {
+      mode:
+        | "sign-in"
+        | "sign-up"
+        | "verify-email"
+        | "request-email-verification"
+        | "forgot-password"
+        | "reset-password"
+      email: string
+      password?: string
+      code?: string
+      newPassword?: string
+    }) => {
+      const endpointMap = {
+        "sign-in": "/api/auth/sign-in",
+        "sign-up": "/api/auth/sign-up",
+        "verify-email": "/api/auth/verify-email",
+        "request-email-verification": "/api/auth/request-email-verification",
+        "forgot-password": "/api/auth/request-password-reset",
+        "reset-password": "/api/auth/reset-password",
+      } as const
+      const endpoint = endpointMap[payload.mode]
+      const normalizedEmail = payload.email.trim().toLowerCase()
+      if (!normalizedEmail) {
+        return { ok: false, error: "Email is required." }
       }
-      const data = await response.json().catch(() => null)
-      setUserName(typeof data?.userName === "string" ? data.userName : trimmed)
-    } catch {
-      // Ignore failed sign in attempts in MVP mode.
-    }
-  }, [])
+      if ((payload.mode === "sign-in" || payload.mode === "sign-up") && !payload.password) {
+        return { ok: false, error: "Password is required." }
+      }
+      if (payload.mode === "verify-email" && !payload.code) {
+        return { ok: false, error: "Verification code is required." }
+      }
+      if (payload.mode === "reset-password" && (!payload.code || !payload.newPassword)) {
+        return { ok: false, error: "Reset code and new password are required." }
+      }
+      
+      try {
+        const requestBody =
+          payload.mode === "forgot-password"
+            || payload.mode === "request-email-verification"
+            ? { email: normalizedEmail }
+            : payload.mode === "verify-email"
+              ? { email: normalizedEmail, code: payload.code }
+              : payload.mode === "reset-password"
+                ? {
+                    email: normalizedEmail,
+                    code: payload.code,
+                    newPassword: payload.newPassword,
+                  }
+                : {
+                    email: normalizedEmail,
+                    password: payload.password,
+                  }
+
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(requestBody),
+        })
+        const data = await response.json().catch(() => null)
+        if (!response.ok) {
+          return {
+            ok: false,
+            error: typeof data?.error === "string" ? data.error : "Authentication failed.",
+            reason: typeof data?.reason === "string" ? data.reason : undefined,
+          }
+        }
+        if (typeof data?.userEmail === "string") {
+          setUserEmail(data.userEmail)
+        }
+        return {
+          ok: true as const,
+          devVerificationCode:
+            typeof data?.devVerificationCode === "string" ? data.devVerificationCode : undefined,
+          devResetCode: typeof data?.devResetCode === "string" ? data.devResetCode : undefined,
+        }
+      } catch {
+        return { ok: false, error: "Unable to reach auth service. Please try again." }
+      }
+    },
+    []
+  )
 
   const handleSignOut = useCallback(async () => {
     try {
       await fetch("/api/auth/sign-out", { method: "POST" })
     } finally {
-      setUserName(null)
+      setUserEmail(null)
     }
   }, [])
 
   const handleToggleSavedDeal = useCallback((product: Product) => {
     setSavedDeals((prev) => {
       const exists = prev.some((saved) => saved.url === product.url)
-      if (userName) {
+      if (userEmail) {
         if (exists) {
           void fetch("/api/saved-deals", {
             method: "DELETE",
@@ -272,14 +333,14 @@ export default function Home() {
       }
       return [product, ...prev].slice(0, 50)
     })
-  }, [userName])
+  }, [userEmail])
 
   const handleClearHistory = useCallback(() => {
     setRecentSearches([])
-    if (userName) {
+    if (userEmail) {
       void fetch("/api/search-history", { method: "DELETE" })
     }
-  }, [userName])
+  }, [userEmail])
 
   const handleSortChange = useCallback((newSort: SortOption) => {
     setSortBy(newSort)
@@ -336,8 +397,8 @@ export default function Home() {
         onSearchChange={setSearchQuery}
         onSearch={handleSearch}
         hasSearched={hasSearched}
-        userName={userName}
-        onSignIn={handleSignIn}
+        userEmail={userEmail}
+        onAuthSubmit={handleAuthSubmit}
         onSignOut={handleSignOut}
       />
 

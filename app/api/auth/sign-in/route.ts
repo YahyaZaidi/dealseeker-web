@@ -1,19 +1,42 @@
 import { NextRequest, NextResponse } from "next/server"
+import { normalizeEmail, verifyAccount } from "@/lib/server/user-store"
 
 const USER_COOKIE_KEY = "dealseeker_user"
 
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null)
-  const userName = typeof body?.userName === "string" ? body.userName.trim() : ""
+  const email = typeof body?.email === "string" ? normalizeEmail(body.email) : ""
+  const password = typeof body?.password === "string" ? body.password : ""
 
-  if (!userName) {
-    return NextResponse.json({ error: "User name is required" }, { status: 400 })
+  if (!email || !password) {
+    return NextResponse.json({ error: "Email and password are required." }, { status: 400 })
   }
 
-  const response = NextResponse.json({ userName })
+  const isValid = await verifyAccount(email, password)
+  if (!isValid.ok) {
+    if (isValid.reason === "email_unverified") {
+      return NextResponse.json(
+        { error: "Please verify your email before signing in.", reason: isValid.reason },
+        { status: 403 }
+      )
+    }
+    if (isValid.reason === "locked") {
+      return NextResponse.json(
+        {
+          error: "Too many failed attempts. Try again later.",
+          reason: isValid.reason,
+          lockUntil: isValid.lockUntil,
+        },
+        { status: 429 }
+      )
+    }
+    return NextResponse.json({ error: "Invalid email or password." }, { status: 401 })
+  }
+
+  const response = NextResponse.json({ userEmail: email, emailVerified: true })
   response.cookies.set({
     name: USER_COOKIE_KEY,
-    value: userName,
+    value: email,
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",

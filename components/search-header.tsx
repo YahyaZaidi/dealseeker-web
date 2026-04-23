@@ -1,18 +1,45 @@
 "use client"
 
+import { useState } from "react"
 import { Search, Zap } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 
 const SUGGESTIONS = ["iPhone 16", "PS5", "MacBook Air", "Samsung TV", "AirPods Pro"]
+type AuthMode =
+  | "sign-in"
+  | "sign-up"
+  | "verify-email"
+  | "request-email-verification"
+  | "forgot-password"
+  | "reset-password"
 
 interface SearchHeaderProps {
   searchQuery: string
   onSearchChange: (query: string) => void
   onSearch: (queryOverride?: string) => void
   hasSearched: boolean
-  userName: string | null
-  onSignIn: () => void
+  userEmail: string | null
+  onAuthSubmit: (payload: {
+    mode: AuthMode
+    email: string
+    password?: string
+    code?: string
+    newPassword?: string
+  }) => Promise<{
+    ok: boolean
+    error?: string
+    reason?: string
+    devVerificationCode?: string
+    devResetCode?: string
+  }>
   onSignOut: () => void
 }
 
@@ -46,14 +73,95 @@ export function SearchHeader({
   onSearchChange,
   onSearch,
   hasSearched,
-  userName,
-  onSignIn,
+  userEmail,
+  onAuthSubmit,
   onSignOut,
 }: SearchHeaderProps) {
+  const [isAuthOpen, setIsAuthOpen] = useState(false)
+  const [authMode, setAuthMode] = useState<AuthMode>("sign-in")
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [code, setCode] = useState("")
+  const [newPassword, setNewPassword] = useState("")
+  const [authError, setAuthError] = useState<string | null>(null)
+  const [authHint, setAuthHint] = useState<string | null>(null)
+  const [isSubmittingAuth, setIsSubmittingAuth] = useState(false)
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     onSearch()
   }
+
+  const handleAuthSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setAuthError(null)
+    setAuthHint(null)
+    setIsSubmittingAuth(true)
+    const submitMode = authMode === "request-email-verification" ? "request-email-verification" : authMode
+    const result = await onAuthSubmit(
+      submitMode === "sign-in" || submitMode === "sign-up"
+        ? { mode: submitMode, email, password }
+        : submitMode === "request-email-verification"
+          ? { mode: submitMode, email }
+        : authMode === "verify-email"
+          ? { mode: authMode, email, code }
+          : authMode === "forgot-password"
+            ? { mode: authMode, email }
+            : { mode: authMode, email, code, newPassword }
+    )
+    setIsSubmittingAuth(false)
+    if (!result.ok) {
+      setAuthError(result.error ?? "Authentication failed.")
+      if (result.reason === "email_unverified") {
+        setAuthMode("verify-email")
+      }
+      return
+    }
+
+    if (authMode === "sign-up") {
+      setAuthMode("verify-email")
+      setAuthHint(
+        result.devVerificationCode
+          ? `Verification code (dev): ${result.devVerificationCode}`
+          : "Verification email sent. Enter your code."
+      )
+      return
+    }
+
+    if (authMode === "request-email-verification") {
+      setAuthMode("verify-email")
+      setAuthHint(
+        result.devVerificationCode
+          ? `Verification code (dev): ${result.devVerificationCode}`
+          : "Verification code sent."
+      )
+      return
+    }
+
+    if (authMode === "forgot-password") {
+      setAuthMode("reset-password")
+      setAuthHint(
+        result.devResetCode ? `Reset code (dev): ${result.devResetCode}` : "Reset code sent."
+      )
+      return
+    }
+
+    if (authMode === "reset-password") {
+      setAuthMode("sign-in")
+      setPassword("")
+      setCode("")
+      setNewPassword("")
+      setAuthHint("Password reset complete. Sign in with your new password.")
+      return
+    }
+
+    setIsAuthOpen(false)
+    setPassword("")
+    setCode("")
+    setNewPassword("")
+  }
+
+  const displayName = userEmail?.split("@")[0] ?? null
 
   if (!hasSearched) {
     return (
@@ -149,21 +257,161 @@ export function SearchHeader({
             Search
           </Button>
         </form>
-        {userName ? (
+        {userEmail ? (
           <div className="flex items-center gap-2">
             <span className="hidden text-xs text-muted-foreground sm:inline">
-              Signed in as <span className="text-foreground">{userName}</span>
+              Signed in as <span className="text-foreground">{displayName}</span>
             </span>
             <Button type="button" variant="outline" size="sm" onClick={onSignOut}>
               Sign out
             </Button>
           </div>
         ) : (
-          <Button type="button" variant="outline" size="sm" onClick={onSignIn}>
+          <Button type="button" variant="outline" size="sm" onClick={() => setIsAuthOpen(true)}>
             Sign in
           </Button>
         )}
       </div>
+      <Dialog open={isAuthOpen} onOpenChange={setIsAuthOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {authMode === "sign-in"
+                ? "Sign in"
+                : authMode === "sign-up"
+                  ? "Create account"
+                  : authMode === "verify-email"
+                    ? "Verify your email"
+                    : authMode === "forgot-password"
+                      ? "Forgot password"
+                      : "Reset password"}
+            </DialogTitle>
+            <DialogDescription>
+              {authMode === "sign-in" && "Sign in with your customer email and password."}
+              {authMode === "sign-up" && "Create an account with your customer email."}
+              {authMode === "verify-email" &&
+                "Enter the 6-digit verification code sent to your email."}
+              {authMode === "request-email-verification" &&
+                "Request a fresh email verification code."}
+              {authMode === "forgot-password" &&
+                "Request a one-time reset code sent to your email."}
+              {authMode === "reset-password" &&
+                "Enter your reset code and choose a new password."}
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleAuthSubmit} className="space-y-4">
+            <div className="space-y-1.5">
+              <label className="text-sm text-muted-foreground">Email</label>
+              <Input
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="you@example.com"
+                required
+              />
+            </div>
+            {(authMode === "sign-in" || authMode === "sign-up") && (
+              <div className="space-y-1.5">
+                <label className="text-sm text-muted-foreground">Password</label>
+                <Input
+                  type="password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  placeholder="At least 8 characters"
+                  required
+                  minLength={8}
+                />
+              </div>
+            )}
+            {(authMode === "verify-email" || authMode === "reset-password") && (
+              <div className="space-y-1.5">
+                <label className="text-sm text-muted-foreground">Code</label>
+                <Input
+                  type="text"
+                  value={code}
+                  onChange={(event) => setCode(event.target.value)}
+                  placeholder="6-digit code"
+                  required
+                />
+              </div>
+            )}
+            {authMode === "reset-password" && (
+              <div className="space-y-1.5">
+                <label className="text-sm text-muted-foreground">New password</label>
+                <Input
+                  type="password"
+                  value={newPassword}
+                  onChange={(event) => setNewPassword(event.target.value)}
+                  placeholder="At least 8 characters"
+                  required
+                  minLength={8}
+                />
+              </div>
+            )}
+            {authHint && <p className="text-sm text-primary">{authHint}</p>}
+            {authError && <p className="text-sm text-destructive">{authError}</p>}
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-3 text-sm">
+                {(authMode === "sign-in" || authMode === "sign-up") && (
+                  <button
+                    type="button"
+                    className="text-primary underline-offset-4 hover:underline"
+                    onClick={() => setAuthMode((prev) => (prev === "sign-in" ? "sign-up" : "sign-in"))}
+                  >
+                    {authMode === "sign-in"
+                      ? "Need an account? Sign up"
+                      : "Already have an account? Sign in"}
+                  </button>
+                )}
+                {authMode === "sign-in" && (
+                  <button
+                    type="button"
+                    className="text-primary underline-offset-4 hover:underline"
+                    onClick={() => setAuthMode("forgot-password")}
+                  >
+                    Forgot password?
+                  </button>
+                )}
+                {authMode === "verify-email" && (
+                  <button
+                    type="button"
+                    className="text-primary underline-offset-4 hover:underline"
+                    onClick={() => setAuthMode("request-email-verification")}
+                  >
+                    Need a new code?
+                  </button>
+                )}
+                {(authMode === "request-email-verification" ||
+                  authMode === "forgot-password" ||
+                  authMode === "reset-password") && (
+                  <button
+                    type="button"
+                    className="text-primary underline-offset-4 hover:underline"
+                    onClick={() => setAuthMode("sign-in")}
+                  >
+                    Back to sign in
+                  </button>
+                )}
+              </div>
+              <Button type="submit" disabled={isSubmittingAuth}>
+                {isSubmittingAuth
+                  ? "Please wait..."
+                  : authMode === "sign-in"
+                    ? "Sign in"
+                    : authMode === "sign-up"
+                      ? "Sign up"
+                      : authMode === "verify-email"
+                        ? "Verify email"
+                        : authMode === "request-email-verification"
+                          ? "Send verification code"
+                        : authMode === "forgot-password"
+                          ? "Send reset code"
+                          : "Reset password"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </header>
   )
 }
