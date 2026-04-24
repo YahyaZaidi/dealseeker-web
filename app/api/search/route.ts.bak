@@ -21,41 +21,53 @@ function parsePrice(priceStr?: string): number | null {
   return isNaN(parsed) ? null : parsed
 }
 
+// Filter out results that don't match the search query well
 function isRelevantResult(title: string, query: string): boolean {
   const titleLower = title.toLowerCase()
-  const queryLower = query.toLowerCase().trim()
+  const queryLower = query.toLowerCase()
 
-  // Use word boundary regex so "iphone 16" doesn't match "iphone 6...16/32/64"
-  const queryWords = queryLower.split(/\s+/)
-  const pattern = queryWords.map((w) => `\\b${w}\\b`).join("\\s+")
-  const regex = new RegExp(pattern)
-  if (!regex.test(titleLower)) return false
+  // Split query into words and check that ALL key words appear in the title
+  const queryWords = queryLower.split(/\s+/).filter((w) => w.length > 1)
+  const allWordsMatch = queryWords.every((word) => titleLower.includes(word))
 
-  // Make sure query words appear near each other (within 30 chars)
-  const firstWordIndex = titleLower.indexOf(queryWords[0])
-  if (queryWords.length > 1) {
-    const lastWord = queryWords[queryWords.length - 1]
-    const lastWordRegex = new RegExp(`\\b${lastWord}\\b`, "g")
-    let match
-    let foundNearby = false
-    while ((match = lastWordRegex.exec(titleLower)) !== null) {
-      if (Math.abs(match.index - firstWordIndex) < 30) {
-        foundNearby = true
-        break
-      }
-    }
-    if (!foundNearby) return false
-  }
+  if (!allWordsMatch) return false
 
-  // Filter out accessories
+  // Filter out accessories and junk results
   const accessoryKeywords = [
-    "case", "cover", "screen protector", "tempered glass",
-    "cable", "charger", "adapter", "skin", "sticker", "decal",
-    "film", "holder", "mount", "stand", "grip", "strap",
-    "sleeve", "pouch", "wallet", "folio", "bumper", "shell",
-    "armor", "protector", "stylus", "airx", "rhinoshield", "solidx",
+    "case",
+    "cover",
+    "screen protector",
+    "tempered glass",
+    "cable",
+    "charger",
+    "adapter",
+    "skin",
+    "sticker",
+    "decal",
+    "film",
+    "holder",
+    "mount",
+    "stand",
+    "ring",
+    "grip",
+    "strap",
+    "sleeve",
+    "pouch",
+    "wallet case",
+    "folio",
+    "bumper",
+    "shell",
+    "armor",
+    "protector",
+    "lens protector",
+    "camera protector",
+    "stylus",
+    "earbuds case",
+    "airpods case",
+    "magsafe case",
   ]
 
+  // Only filter accessories if the query itself doesn't mention them
   const queryMentionsAccessory = accessoryKeywords.some((kw) =>
     queryLower.includes(kw)
   )
@@ -65,18 +77,13 @@ function isRelevantResult(title: string, query: string): boolean {
     if (isAccessory) return false
   }
 
-  // Filter out stores that only sell accessories
-  const accessoryStores = ["rhinoshield.io", "casetify", "spigen", "otterbox", "dbrand"]
-  const storeLower = title.toLowerCase()
-  if (accessoryStores.some((store) => storeLower.includes(store))) return false
-
   return true
 }
 
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl
   const query = searchParams.get("q")
-  const sort = searchParams.get("sort")
+  const sort = searchParams.get("sort") // "price_asc", "price_desc", or null/default
   const pageParam = Number.parseInt(searchParams.get("page") ?? "1", 10)
   const limitParam = Number.parseInt(searchParams.get("limit") ?? "24", 10)
   const page = Number.isNaN(pageParam) || pageParam < 1 ? 1 : pageParam
@@ -142,6 +149,7 @@ export async function GET(request: NextRequest) {
       url: item.product_url!,
     }))
 
+  // Server-side sorting
   if (sort === "price_asc") {
     products.sort((a, b) => a.price - b.price)
   } else if (sort === "price_desc") {
